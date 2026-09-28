@@ -1,5 +1,6 @@
 numpy>=1.24
-pygame>=2.5
+# pygame-ce, not pygame: the original's font module is broken on Python 3.14
+pygame-ce>=2.5
 # optional, only for the --plot flag in analyze
 matplotlib>=3.7
 # optional, only for reading a real Xreal Air over USB HID

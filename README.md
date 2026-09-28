@@ -9,7 +9,7 @@ naive attitude filters.
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
-pip install numpy pygame
+pip install numpy pygame-ce
 
 python -m paceline.capture --source sim --out data/sim.csv --seconds 90
 python -m paceline.analyze --file data/sim.csv

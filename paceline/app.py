@@ -50,7 +50,15 @@ def main(argv=None):
     screen = pygame.display.set_mode((1280, 720), flags, display=a.display)
     pygame.display.set_caption("pace line")
     pygame.mouse.set_visible(False)
-    font = pygame.font.SysFont("menlo,dejavusansmono,monospace", 15)
+    try:
+        font = pygame.font.SysFont("menlo,dejavusansmono,monospace", 15)
+    except Exception as e:
+        # Some pygame builds ship without a working font module (notably
+        # pygame 2.6.1 on Python 3.14). The line is the point; the readout
+        # isn't. Fall back to printing state to the terminal.
+        print(f"no font module ({type(e).__name__}) - HUD text disabled, "
+              f"state will print here instead")
+        font = None
 
     rend = LineRenderer(screen, px_per_deg=a.ppd, mono=a.mono)
     horizon = a.latency_ms / 1000.0
@@ -126,7 +134,13 @@ def main(argv=None):
 
         rend.draw(pacer, pitch, roll, frame_dt)
 
-        if hud:
+        if hud and font is None:
+            if int(wall * 2) != int((wall - frame_dt) * 2):
+                print(f"\r{filt.name:6s} pitch {filt.pitch:+6.2f}  "
+                      f"{pacer.state:5s} gap {pacer.gap_m:+5.1f}m  "
+                      f"line {pacer.line_distance():4.1f}m  "
+                      f"{clock.get_fps():3.0f}fps", end="", flush=True)
+        elif hud:
             lines = [
                 f"{filt.name.upper():6s}  pitch {filt.pitch:+6.2f}  (other {other.pitch:+6.2f})",
                 f"state {pacer.state:5s}  gap {pacer.gap_m:+5.1f} m  line {pacer.line_distance():4.1f} m",
