@@ -57,6 +57,7 @@ def main(argv=None):
     clock = pygame.time.Clock()
     it = iter(src)
     t_prev = None
+    last_accel = [0.0, 0.0, 9.81]
     hud = True
     running = True
 
