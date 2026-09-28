@@ -1,0 +1,6 @@
+numpy>=1.24
+pygame>=2.5
+# optional, only for the --plot flag in analyze
+matplotlib>=3.7
+# optional, only for reading a real Xreal Air over USB HID
+hidapi>=0.14
