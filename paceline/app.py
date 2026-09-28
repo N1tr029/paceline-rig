@@ -33,6 +33,9 @@ def main(argv=None):
                     help="MEASURED motion-to-photon. Prediction horizon. 120Hz=8.3, 60Hz=16.7")
     ap.add_argument("--ppd", type=float, default=None, help="pixels per degree; measure it, don't guess")
     ap.add_argument("--mono", action="store_true")
+    ap.add_argument("--no-grid", action="store_true",
+                    help="hide the stand-in road. Use this on real glasses, "
+                         "where you are looking through them at a real one")
     a = ap.parse_args(argv)
 
     try:
@@ -60,12 +63,14 @@ def main(argv=None):
               f"state will print here instead")
         font = None
 
-    rend = LineRenderer(screen, px_per_deg=a.ppd, mono=a.mono)
+    rend = LineRenderer(screen, px_per_deg=a.ppd, mono=a.mono,
+                        grid=not a.no_grid)
     horizon = a.latency_ms / 1000.0
     clock = pygame.time.Clock()
     it = iter(src)
     t_prev = None
     last_accel = [0.0, 0.0, 9.81]
+    primed = False
     hud = True
     running = True
 
@@ -102,6 +107,8 @@ def main(argv=None):
                     rend.flip_h = not rend.flip_h
                 elif e.key == pygame.K_v:
                     rend.flip_v = not rend.flip_v
+                elif e.key == pygame.K_g:
+                    rend.grid = not rend.grid
                 elif e.key == pygame.K_TAB:
                     hud = not hud
 
@@ -112,6 +119,11 @@ def main(argv=None):
                 t, g, acc = next(it)
                 dt = 0.0025 if t_prev is None else max(1e-5, min(0.05, t - t_prev))
                 t_prev = t
+                if not primed:
+                    for f_ in (filt, other):
+                        if hasattr(f_, "prime"):
+                            f_.prime(acc)
+                    primed = True
                 filt.update(g, acc, dt)
                 other.update(g, acc, dt)
                 last_accel = acc
@@ -145,7 +157,7 @@ def main(argv=None):
                 f"{filt.name.upper():6s}  pitch {filt.pitch:+6.2f}  (other {other.pitch:+6.2f})",
                 f"state {pacer.state:5s}  gap {pacer.gap_m:+5.1f} m  line {pacer.line_distance():4.1f} m",
                 f"pace {int(pace)//60}:{int(pace)%60:02d}/mi   target {int(a.target)//60}:{int(a.target)%60:02d}",
-                f"predict {a.latency_ms:.1f} ms   {clock.get_fps():4.0f} fps   [F]ilter [M]ono [C]al [TAB]hud",
+                f"predict {a.latency_ms:.1f} ms   {clock.get_fps():4.0f} fps   [F]ilter [G]rid [M]ono [C]al",
             ]
             for i, s in enumerate(lines):
                 screen.blit(font.render(s, True, (70, 96, 90)), (14, 12 + i * 19))

@@ -29,7 +29,7 @@ COLOURS = {"hold": GO, "push": PUSH_C, "ease": EASE_C}
 
 class LineRenderer:
     def __init__(self, surface, px_per_deg=None, horizon_frac=0.38,
-                 mono=False, flip_h=False, flip_v=False):
+                 mono=False, flip_h=False, flip_v=False, grid=False):
         import pygame
         self.pg = pygame
         self.s = surface
@@ -39,7 +39,9 @@ class LineRenderer:
         self.horizon0 = self.h * horizon_frac
         self.mono = mono
         self.flip_h, self.flip_v = flip_h, flip_v
+        self.grid = grid          # fake road, for judging stability on a desk
         self.t = 0.0
+        self.travelled = 0.0
 
     def _xy(self, d, lateral, pitch_deg, roll_deg):
         dep = math.degrees(math.atan(CAM_H / max(0.4, d)))
@@ -54,10 +56,39 @@ class LineRenderer:
             y = cy + dx * math.sin(a) + dy * math.cos(a)
         return x, y
 
+    def _draw_grid(self, pitch_deg, roll_deg):
+        """A stand-in for the road.
+
+        On real glasses you look through them at actual tarmac and this is
+        pointless. On a desk monitor it is the whole demo: the grid and the
+        line are drawn in the same world frame, so a working filter keeps the
+        line WELDED to the grid while both sweep with head motion. Switch to
+        the naive filter and the line visibly detaches and jitters against it.
+        """
+        pg = self.pg
+        dim = (26, 34, 32)
+        for lat in (-3.2, 3.2):                       # road edges
+            a = self._xy(4.0, lat, pitch_deg, roll_deg)
+            b = self._xy(70.0, lat, pitch_deg, roll_deg)
+            pg.draw.line(self.s, dim, a, b, 1)
+        step = 5.0                                     # cross ticks every 5 m
+        phase = self.travelled % step
+        d = 5.0 - phase
+        while d < 60.0:
+            if d > 4.0:
+                a = self._xy(d, -3.2, pitch_deg, roll_deg)
+                b = self._xy(d, 3.2, pitch_deg, roll_deg)
+                fade = max(0.15, 1.0 - d / 60.0)
+                pg.draw.line(self.s, tuple(int(c * fade) for c in dim), a, b, 1)
+            d += step
+
     def draw(self, pacer, pitch_deg, roll_deg, dt, reduce_motion=False):
         pg = self.pg
         self.t += dt
+        self.travelled += pacer.v_target * dt if hasattr(pacer, "v_target") else 0.0
         self.s.fill((0, 0, 0))
+        if self.grid:
+            self._draw_grid(pitch_deg, roll_deg)
 
         d = pacer.line_distance()
         ws = pacer.width_scale()

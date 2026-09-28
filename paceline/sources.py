@@ -130,55 +130,79 @@ class ReplaySource:
 class XrealSource:
     """Raw IMU from Xreal / Nreal Air over USB HID.
 
-    UNTESTED against hardware -- written from the public reverse-engineered
-    drivers. If the packet layout below is wrong you will see nonsense rates;
-    compare against https://github.com/GabiLegrand/xreal-imu-python and fix
-    _decode, which is the only part that should need changing.
+    The packet layout is not published and varies between models, so this
+    does not guess: on open it probes the stream against several candidate
+    layouts and keeps the one whose data obeys physics (|accel| ~ 9.81 and
+    |gyro| ~ 0 while held still). See xreal.py.
 
-    Never read a device's own fused quaternion instead of this. Doing so
+    Hold the glasses still for a second when this starts.
+
+    Never read the device's own fused quaternion instead of this. That
     inherits its accelerometer trust, which is the exact failure the gated
     filter exists to defeat.
     """
 
-    VENDOR = 0x3318          # Xreal
-    IMU_INTERFACE = 3
-
-    def __init__(self, product_id=None, axes: AxisMap | None = None):
+    def __init__(self, axes: AxisMap | None = None, verbose=True, vid=None, pid=None):
         try:
-            import hid  # noqa
+            import hid
         except ImportError as e:
             raise SystemExit(
-                "hidapi not installed. `pip install hidapi`, or run with "
-                "--source sim to work without hardware."
+                "hidapi not installed:  pip install hidapi\n"
+                "Or work without hardware:  --source sim"
             ) from e
-        import hid
-        devs = [d for d in hid.enumerate(self.VENDOR, 0)
-                if d.get("interface_number") == self.IMU_INTERFACE]
-        if product_id:
-            devs = [d for d in devs if d["product_id"] == product_id]
+        from .xreal import enumerate_candidates, probe
+
+        devs = enumerate_candidates(vid, pid)
         if not devs:
             raise SystemExit(
-                "No Xreal IMU interface found. Plugged in? On Linux you may "
-                "need a udev rule; on macOS, grant input-monitoring permission."
+                "No Xreal/Nreal HID device found. Run `python -m paceline.doctor` "
+                "for what to check."
             )
-        self.dev = hid.Device(path=devs[0]["path"])
+        last = None
+        for d in devs[:3]:
+            try:
+                dev = hid.Device(path=d["path"])
+            except Exception as e:
+                last = e
+                continue
+            try:
+                if verbose:
+                    print(f"probing interface {d.get('interface_number')} "
+                          f"- hold the glasses still...")
+                self.layout = probe(dev, verbose=verbose)
+                self.dev = dev
+                self.info = d
+                break
+            except Exception as e:
+                last = e
+                dev.close()
+        else:
+            raise SystemExit(
+                f"Found the device but could not decode it: {last}\n"
+                "Run `python -m paceline.doctor` for detail."
+            )
         self.axes = axes or AxisMap()
         self.t0 = time.perf_counter()
+        self.dropped = 0
 
-    def _decode(self, buf):
-        """Pull gyro (deg/s) and accel (m/s^2) out of one HID report."""
-        import struct
-        gx, gy, gz, ax, ay, az = struct.unpack_from("<6f", buf, 8)
-        return np.array([gx, gy, gz]), np.array([ax, ay, az])
+    def close(self):
+        try:
+            self.dev.close()
+        except Exception:
+            pass
 
     def __iter__(self):
         return self
 
     def __next__(self):
-        buf = self.dev.read(64, timeout=200)
+        buf = self.dev.read(64, timeout=500)
         if not buf:
-            raise StopIteration
-        gyro, accel = self._decode(bytes(buf))
+            self.dropped += 1
+            if self.dropped > 20:
+                raise StopIteration
+            return next(self)
+        self.dropped = 0
+        gyro, accel = self.layout.decode(bytes(buf))
         return time.perf_counter() - self.t0, self.axes(gyro), self.axes(accel)
 
 

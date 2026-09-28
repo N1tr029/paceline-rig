@@ -75,22 +75,40 @@ spectrum. `analyze.py` reports both, and `--plot` draws it.
 
 ## Using real glasses
 
-`XrealSource` reads raw IMU from Xreal/Nreal Air over USB HID. It is written
-from the public reverse-engineered drivers and is **untested against
-hardware** — if rates look like nonsense, fix `_decode()` against
-[xreal-imu-python](https://github.com/GabiLegrand/xreal-imu-python). That
-should be the only part needing changes.
+Plug them in and run:
 
 ```bash
 pip install hidapi
-python -m paceline.capture --source xreal --out data/treadmill.csv --seconds 300
-python -m paceline.analyze --file data/treadmill.csv
-python -m paceline.app --source xreal --display 1 --fullscreen --latency-ms 8.3
+python -m paceline.doctor     # what's connected, what's missing, how to fix it
+python -m paceline.go         # finds the display, decodes the IMU, launches
 ```
 
-The glasses appear as a second 1920×1080 monitor — `--display 1` usually. Do
-not use Xreal's own Beam/3DoF software; you want a dumb monitor plus a raw
+`go` auto-detects which monitor is the glasses, finds the IMU interface,
+works out the packet layout, calibrates level and goes fullscreen. Rehearse
+the whole thing with no hardware using `python -m paceline.go --sim`.
+
+Do not use Xreal's own Beam/3DoF software. You want a dumb monitor plus a raw
 sensor and nothing else.
+
+### How it reads the IMU
+
+The packet layout is not published and differs between models and firmware
+revisions, so nothing here hard-codes a guess. On connect it reads a burst
+and tries several candidate layouts, scoring each on **physics**: while held
+still, the acceleration vector must be ~9.81 m/s² and steady, and the gyro
+must read near zero. Only the right decode satisfies both.
+
+If every candidate fails, `doctor` prints what it saw for each, and you add a
+`Layout` to `CANDIDATES` in `xreal.py` using
+[xreal-imu-python](https://github.com/GabiLegrand/xreal-imu-python) as
+reference. That list is the only place that should ever need changing.
+
+### Recording and scoring on real hardware
+
+```bash
+python -m paceline.capture --source xreal --out data/treadmill.csv --seconds 300
+python -m paceline.analyze --file data/treadmill.csv
+```
 
 Two things to get right before trusting a number:
 
@@ -115,7 +133,25 @@ thing to buy, not the first.
 python tests/test_core.py        # or: pytest -q
 ```
 
+## Why the line looks like it's jumping on a desk monitor
+
+Because it should. The screen is standing in for your head. In the simulator
+a virtual runner's head nods ±3° at 2.8 Hz, and the line is glued to the
+*road* — so it has to slide the opposite way on screen to stay put in the
+world. On a monitor sitting still on a desk you see the sliding with nothing
+to judge it against.
+
+That's what the stand-in road grid is for (`G`, on by default in `app`): grid
+and line are drawn in the same world frame, so a working filter keeps the
+line **welded to the grid** while both sweep together. Press `F` for the
+naive filter and the line visibly detaches and jitters against it.
+
+Through real glasses you're looking at an actual road, so `go` turns the grid
+off by default.
+
 ## Status
 
-Simulator, filters, pacer, renderer and scoring all work. The Xreal HID decode
-is unverified. Nothing here has been on a real head yet.
+Simulator, filters, pacer, renderer, scoring, device discovery and the
+auto-probing decode all work and are tested. **Nothing has been on a real
+head yet** — the decode probe is designed to fail loudly and explain itself
+rather than hand you plausible nonsense.
